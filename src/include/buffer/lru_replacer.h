@@ -37,6 +37,11 @@ class LRUReplacer : public Replacer {
 
 private:
   // add your own private member variables here
+  list<frame_id_t> free_list_; // 用于存储可替换的页帧号，按访问顺序排列
+  unordered_set<frame_id_t> free_set_; // 用于快速查找页帧号是否在lru_list_中
+  size_t size_;
+  size_t max_size_;
+  mutex mutex_; // 用于线程安全
 };
 
 #endif  // MINISQL_LRU_REPLACER_H

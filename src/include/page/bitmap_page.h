@@ -29,7 +29,39 @@ class BitmapPage {
    * @return whether a page in the extent is free
    */
   bool IsPageFree(uint32_t page_offset) const;
+/*
+  void SerializeTo(char* buffer) const {
+    // 写入元数据
+    uint32_t* uint_ptr = reinterpret_cast<uint32_t*>(buffer);
+    *uint_ptr = page_allocated_;
+    uint_ptr++;
+    *uint_ptr = next_free_page_;
+    uint_ptr++;
+    
+    // 写入位图数据
+    unsigned char* byte_ptr = reinterpret_cast<unsigned char*>(uint_ptr);
+    for (size_t i = 0; i < MAX_CHARS; i++) {
+        *byte_ptr = bytes[i];
+        byte_ptr++;
+    }
+}
 
+void DeserializeFrom(const char* buffer) {
+    // 读取元数据
+    const uint32_t* uint_ptr = reinterpret_cast<const uint32_t*>(buffer);
+    page_allocated_ = *uint_ptr;
+    uint_ptr++;
+    next_free_page_ = *uint_ptr;
+    uint_ptr++;
+    
+    // 读取位图数据
+    const unsigned char* byte_ptr = reinterpret_cast<const unsigned char*>(uint_ptr);
+    for (size_t i = 0; i < MAX_CHARS; i++) {
+        bytes[i] = *byte_ptr;
+        byte_ptr++;
+    }
+}
+*/
  private:
   /**
    * check a bit(byte_index, bit_index) in bytes is free(value 0).

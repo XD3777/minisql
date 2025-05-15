@@ -121,6 +121,18 @@ class Field {
     return Type::GetInstance(type_id_)->CompareGreaterThanEquals(*this, o);
   }
 
+  // 新增：获取整数类型值（公共接口）
+  int32_t GetInt() const {
+    ASSERT(type_id_ == TypeId::kTypeInt && !is_null_, "Invalid type or NULL field");
+    return value_.integer_;
+  }
+
+  // 新增：获取浮点类型值（公共接口）
+  float_t GetFloat() const {
+    ASSERT(type_id_ == TypeId::kTypeFloat && !is_null_, "Invalid type or NULL field");
+    return value_.float_;
+  }
+
   friend void Swap(Field &first, Field &second) {
     std::swap(first.value_, second.value_);
     std::swap(first.type_id_, second.type_id_);
@@ -144,7 +156,7 @@ class Field {
     }
   }
 
- protected:
+ public:
   union Val {
     int32_t integer_;
     float float_;
