@@ -51,29 +51,129 @@ void DiskManager::WritePage(page_id_t logical_page_id, const char *page_data) {
  * TODO: Student Implement
  */
 page_id_t DiskManager::AllocatePage() {
-  ASSERT(false, "Not implemented yet.");
-  return INVALID_PAGE_ID;
+  
+   DiskFileMetaPage *meta_page;
+   meta_page = reinterpret_cast<DiskFileMetaPage *>(meta_data_);
+  // 遍历所有分区，寻找有空闲页的分区
+  uint32_t extent_id;
+  for (extent_id = 0; extent_id < meta_page->GetExtentNums(); extent_id++) {
+      char bitmap_page[PAGE_SIZE];
+      page_id_t bitmap_page_id = extent_id * (BITMAP_SIZE + 1) + 1; // 位图页的物理页号
+      ReadPhysicalPage(bitmap_page_id, bitmap_page);
+      BitmapPage<PAGE_SIZE> *bitmap;
+      bitmap = reinterpret_cast<BitmapPage<PAGE_SIZE> *>(bitmap_page);
+
+      uint32_t page_offset = 0;
+      if (bitmap->AllocatePage(page_offset)) {
+        // 更新元信息
+        meta_page->extent_used_page_[extent_id]++; // 直接操作数组
+        meta_page->num_allocated_pages_++;
+        WritePhysicalPage(bitmap_page_id, bitmap_page);
+        // 返回逻辑页号
+        return extent_id * BITMAP_SIZE + page_offset;
+        //LOG(INFO) << "Extend_id: " << extent_id << std::endl;
+        //LOG(INFO) << "page_offset: " << page_offset << std::endl;
+      }
+  }
+  
+  if (extent_id >=MAX_VALID_PAGE_ID / BITMAP_SIZE) {
+    return INVALID_PAGE_ID;
+  }
+
+  char new_bitmap_page[PAGE_SIZE] = {0};
+  page_id_t bitmap_physical_page = extent_id * (BITMAP_SIZE + 1) + 1;
+  //ReadPhysicalPage(bitmap_physical_page, new_bitmap_page);
+  BitmapPage<PAGE_SIZE> *new_bitmap;
+  new_bitmap = reinterpret_cast<BitmapPage<PAGE_SIZE> *>(new_bitmap_page);
+  uint32_t page_offset = 0;
+  new_bitmap->AllocatePage(page_offset);
+  WritePhysicalPage(bitmap_physical_page, new_bitmap_page);
+
+  meta_page->extent_used_page_[extent_id] += 1;
+  meta_page->num_allocated_pages_ ++;
+  meta_page->num_extents_ = extent_id + 1;
+  //LOG(INFO) << "Extend_id: " << extent_id << std::endl;
+  //LOG(INFO) << "page_offset: " << page_offset << std::endl;
+  return page_offset + extent_id * BITMAP_SIZE;
+  
 }
 
 /**
  * TODO: Student Implement
  */
 void DiskManager::DeAllocatePage(page_id_t logical_page_id) {
-  ASSERT(false, "Not implemented yet.");
+  std::scoped_lock<std::recursive_mutex> lock(db_io_latch_);
+    if (logical_page_id == INVALID_PAGE_ID) {
+        return;
+    }
+
+    // 计算extent_id和page_offset
+    uint32_t extent_id = logical_page_id / BITMAP_SIZE;
+    uint32_t page_offset = logical_page_id % BITMAP_SIZE;
+
+    DiskFileMetaPage *meta_page;
+    meta_page = reinterpret_cast<DiskFileMetaPage *>(meta_data_);
+
+    // 检查extent_id是否有效
+    if (extent_id >= meta_page->GetExtentNums()) {
+        return;
+    }
+
+    // 读取位图页
+    char bitmap_page_data[PAGE_SIZE];
+    page_id_t bitmap_page_id = extent_id * (BITMAP_SIZE + 1) + 1;
+    ReadPhysicalPage(bitmap_page_id, bitmap_page_data);
+    BitmapPage<PAGE_SIZE> *bitmap_page;
+    bitmap_page = reinterpret_cast<BitmapPage<PAGE_SIZE> *>(bitmap_page_data);
+
+    // 释放页
+    if (bitmap_page->DeAllocatePage(page_offset)) {
+        // 更新元数据
+        meta_page->num_allocated_pages_--;
+        meta_page->extent_used_page_[extent_id]--;
+  
+        // 更新位图页
+        WritePhysicalPage(bitmap_page_id, bitmap_page_data);
+    }
 }
 
 /**
  * TODO: Student Implement
  */
 bool DiskManager::IsPageFree(page_id_t logical_page_id) {
-  return false;
+  std::scoped_lock<std::recursive_mutex> lock(db_io_latch_);
+    if (logical_page_id == INVALID_PAGE_ID) {
+        return false;
+    }
+
+    // 计算extent_id和page_offset
+    uint32_t extent_id = logical_page_id / BITMAP_SIZE;
+    uint32_t page_offset = logical_page_id % BITMAP_SIZE;
+
+    DiskFileMetaPage *meta_page;
+    meta_page = reinterpret_cast<DiskFileMetaPage *>(meta_data_);
+
+    // 检查extent_id是否有效
+    if (extent_id >= meta_page->GetExtentNums()) {
+        return false;
+    }
+
+    // 读取位图页
+    char bitmap_page_data[PAGE_SIZE];
+    page_id_t bitmap_page_id = extent_id * (BITMAP_SIZE + 1) + 1;
+    ReadPhysicalPage(bitmap_page_id, bitmap_page_data);
+    BitmapPage<PAGE_SIZE> *bitmap_page;
+    bitmap_page = reinterpret_cast<BitmapPage<PAGE_SIZE> *>(bitmap_page_data);
+
+    // 检查页是否空闲
+    return bitmap_page->IsPageFree(page_offset);
 }
 
 /**
  * TODO: Student Implement
  */
 page_id_t DiskManager::MapPageId(page_id_t logical_page_id) {
-  return 0;
+  return logical_page_id + 1 + 1 + logical_page_id / BITMAP_SIZE;
 }
 
 int DiskManager::GetFileSize(const std::string &file_name) {
