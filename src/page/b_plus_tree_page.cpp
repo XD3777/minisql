@@ -22,7 +22,7 @@ bool BPlusTreePage::IsLeafPage() const {
  * TODO: Student Implement
  */
 bool BPlusTreePage::IsRootPage() const {
-  if(parent_page_id_ == nullptr)
+  if(parent_page_id_ == INVALID_PAGE_ID)
   {
     return true
   }

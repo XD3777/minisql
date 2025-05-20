@@ -26,7 +26,7 @@ void BPlusTree::Destroy(page_id_t current_page_id) {
  * Helper function to decide whether current b+tree is empty
  */
 bool BPlusTree::IsEmpty() const {
-  return false;
+  return root_page_id_ == INVALID_PAGE_ID;
 }
 
 /*****************************************************************************
@@ -37,7 +37,30 @@ bool BPlusTree::IsEmpty() const {
  * This method is used for point query
  * @return : true means key exists
  */
-bool BPlusTree::GetValue(const GenericKey *key, std::vector<RowId> &result, Txn *transaction) { return false; }
+bool BPlusTree::GetValue(const GenericKey *key, std::vector<RowId> &result, Txn *transaction) {
+  
+ Page * page =  FindLeafPage(key, root_page_id_ , false);
+
+  if (page == nullptr) {
+        return false;
+    }
+
+ auto *node = reinterpret_cast<BPlusTreePage *>(page->GetData());
+  
+ RowId value;
+  bool found =  node->Lookup(key, value, processor_);
+  
+  if (found) {
+        // 如果找到目标键，则将关联的值添加到结果向量中
+        result.push_back(value);
+    }
+
+    buffer_pool_manager_->UnpinPage(leaf->GetPageId(), false);//释放叶空间
+
+    return found;
+
+
+ }
 
 /*****************************************************************************
  * INSERTION
@@ -56,7 +79,27 @@ bool BPlusTree::Insert(GenericKey *key, const RowId &value, Txn *transaction) { 
  * an "out of memory" exception if returned value is nullptr), then update b+
  * tree's root page id and insert entry directly into leaf page.
  */
-void BPlusTree::StartNewTree(GenericKey *key, const RowId &value) {}
+void BPlusTree::StartNewTree(GenericKey *key, const RowId &value) {
+   page_id_t new_page_id;
+  Page *new_page = buffer_pool_manager_->NewPage(&new_page_id);
+  if (new_page == nullptr) {
+    throw std::runtime_error("Out of memory");
+  }
+  
+  // 初始化叶子节点
+  auto *leaf = reinterpret_cast<LeafPage *>(new_page->GetData());
+  leaf->Init(new_page_id, INVALID_PAGE_ID, processor_.GetKeySize(), leaf_max_size_);
+  
+  // 插入第一个键值对
+  leaf->Insert(key, value, processor_);
+  
+  // 更新根页面ID
+  root_page_id_ = new_page_id;
+  UpdateRootPageId(true);  // true表示插入新记录
+  
+  // 释放页面
+  buffer_pool_manager_->UnpinPage(new_page_id, true);
+}
 
 /*
  * Insert constant key & value pair into leaf page
@@ -75,9 +118,50 @@ bool BPlusTree::InsertIntoLeaf(GenericKey *key, const RowId &value, Txn *transac
  * an "out of memory" exception if returned value is nullptr), then move half
  * of key & value pairs from input page to newly created page
  */
-BPlusTreeInternalPage *BPlusTree::Split(InternalPage *node, Txn *transaction) { return nullptr; }
+BPlusTreeInternalPage *BPlusTree::Split(InternalPage *node, Txn *transaction) { 
+  page_id_t new_page_id;
+  Page *new_page = buffer_pool_manager_->NewPage(&new_page_id);
+  if (new_page == nullptr) {
+    throw std::runtime_error("Out of memory");
+  }
+  
+  // 初始化新中间节点
+  auto *new_internal= reinterpret_cast<InternalPage *>(new_page->GetData());
+  new_internal->Init(new_page_id, node->GetParentPageId(), processor_.GetKeySize(), leaf_max_size_);
+  
+  // 移动一半数据到新节点
+  node->MoveHalfTo(new_internal);
+  
+  
+  buffer_pool_manager_->UnpinPage(new_page_id, true);
+  return new_internal;
 
-BPlusTreeLeafPage *BPlusTree::Split(LeafPage *node, Txn *transaction) { return nullptr; }
+}
+
+
+
+BPlusTreeLeafPage *BPlusTree::Split(LeafPage *node, Txn *transaction) { 
+  page_id_t new_page_id;
+  Page *new_page = buffer_pool_manager_->NewPage(&new_page_id);
+  if (new_page == nullptr) {
+    throw std::runtime_error("Out of memory");
+  }
+  
+  // 初始化新叶子节点
+  auto *new_leaf = reinterpret_cast<LeafPage *>(new_page->GetData());
+  new_leaf->Init(new_page_id, node->GetParentPageId(), processor_.GetKeySize(), leaf_max_size_);
+  
+  // 移动一半数据到新节点
+  node->MoveHalfTo(new_leaf);
+  
+  // 设置链表指针
+  new_leaf->SetNextPageId(node->GetNextPageId());
+  node->SetNextPageId(new_leaf->GetPageId());
+  
+  buffer_pool_manager_->UnpinPage(new_page_id, true);
+  return new_leaf;
+
+ }
 
 /*
  * Insert key & value pair into internal page after split
@@ -201,7 +285,30 @@ IndexIterator BPlusTree::End() {
  * Note: the leaf page is pinned, you need to unpin it after use.
  */
 Page *BPlusTree::FindLeafPage(const GenericKey *key, page_id_t page_id, bool leftMost) {
-  return nullptr;
+  // 1. 获取当前页
+  Page *page = buffer_pool_manager_->FetchPage(page_id);
+  auto *node = reinterpret_cast<BPlusTreePage *>(page->GetData());
+  
+  // 2. 如果是叶子节点，直接返回
+  if (node->IsLeafPage()) {
+    return page;
+  }
+  
+  // 3. 如果是内部节点，继续向下查找
+  auto *internal = reinterpret_cast<InternalPage *>(node);
+  page_id_t child_page_id;
+  
+  if (leftMost) {
+    // 查找最左边的叶子节点
+    child_page_id = internal->ValueAt(0);
+  } else {
+    // 根据键值查找合适的子节点
+    child_page_id = internal->Lookup(key, processor_);
+  }
+  
+  // 4. 递归查找子节点
+  buffer_pool_manager_->UnpinPage(page_id, false);
+  return FindLeafPage(key, child_page_id, leftMost);
 }
 
 /*
