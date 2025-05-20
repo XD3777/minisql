@@ -416,6 +416,24 @@ Page *BPlusTree::FindLeafPage(const GenericKey *key, page_id_t page_id, bool lef
  * updating it.
  */
 void BPlusTree::UpdateRootPageId(int insert_record) {
+  Page *header_page = buffer_pool_manager_->FetchPage(INDEX_ROOTS_PAGE_ID);
+    if (header_page == nullptr) {
+        throw std::runtime_error("Failed to fetch header page");
+    }
+    IndexRootsPage *index_roots_page = reinterpret_cast<IndexRootsPage *>(header_page->GetData());
+
+    // 2. 判断操作类型
+    if (insert_record) {
+        // 插入操作
+        index_roots_page->Insert(index_id_, root_page_id_);
+    } else {
+        // 更新操作
+        index_roots_page->Update(index_id_, root_page_id_);
+    }
+
+    // 3. 标记页面为脏页并释放
+    header_page->SetDirty(true);
+    buffer_pool_manager_->UnpinPage(INDEX_ROOTS_PAGE_ID, true);
 }
 
 /**
