@@ -86,8 +86,22 @@ void BPlusTreePage::SetMaxSize(int size) {
 /**
  * TODO: Student Implement
  */
-int BPlusTreePage::GetMinSize() const {
-  return max_size_/2;
+int BPlusTreePage::GetMinSize() const {//这里叶子节点和中间节点有区别 要么在这做出区别要么后面解决,根节点和非根节点有区别
+  if(IsRootPage())
+  {
+    if(IsLeafPage())
+    {
+      return 0;//即是root 又是 leaf 
+    }
+    else{
+      return 2;//是root 但不是leaf
+    }
+  }
+  else
+  {
+    return max_size_/2;
+  }
+  
 }
 
 /*
