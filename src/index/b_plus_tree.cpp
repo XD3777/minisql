@@ -72,7 +72,20 @@ bool BPlusTree::GetValue(const GenericKey *key, std::vector<RowId> &result, Txn 
  * @return: since we only support unique key, if user try to insert duplicate
  * keys return false, otherwise return true.
  */
-bool BPlusTree::Insert(GenericKey *key, const RowId &value, Txn *transaction) { return false; }
+bool BPlusTree::Insert(GenericKey *key, const RowId &value, Txn *transaction) { 
+  
+  if(IsEmpty())//如果是空树的话
+  {
+    StartNewTree(key,value);
+    return true;
+
+  }
+  else{//如果不是空树的话
+
+ bool found = InsertIntoLeaf(key, value, transaction); 
+    return found;
+  }
+ }
 /*
  * Insert constant key & value pair into an empty tree
  * User needs to first ask for new page from buffer pool manager(NOTICE: throw
@@ -109,7 +122,41 @@ void BPlusTree::StartNewTree(GenericKey *key, const RowId &value) {
  * @return: since we only support unique key, if user try to insert duplicate
  * keys return false, otherwise return true.
  */
-bool BPlusTree::InsertIntoLeaf(GenericKey *key, const RowId &value, Txn *transaction) { return false; }
+bool BPlusTree::InsertIntoLeaf(GenericKey *key, const RowId &value, Txn *transaction) { 
+  
+  Page *leaf_page = FindLeafPage(key, root_page_id_, false);
+  auto *leaf = reinterpret_cast<LeafPage *>(leaf_page->GetData());
+  
+  // 步骤 2: 检查键是否已经存在
+  RowId existing_value;
+  if (leaf->Lookup(key, existing_value, processor_)) {
+    // 键已经存在，返回 false
+    buffer_pool_manager_->UnpinPage(leaf->GetPageId(), false);
+    return false;
+  }
+  
+  // 步骤 3: 插入键值对
+  leaf->Insert(key, value, processor_);
+  
+  // 步骤 4: 检查是否需要分裂
+  if (leaf->GetSize() > leaf->GetMaxSize()) {
+    // 分裂叶子结点
+    LeafPage *new_leaf = Split(leaf, transaction);
+    
+    // 获取分裂后的中间键
+    GenericKey *middle_key = new_leaf->KeyAt(0);
+    
+    // 将中间键插入到父结点中
+    InsertIntoParent(leaf, middle_key, new_leaf, transaction);
+  }
+  
+  // 步骤 5: 释放叶子结点
+  buffer_pool_manager_->UnpinPage(leaf->GetPageId(), true);
+  
+  return true;
+
+
+}
 
 /*
  * Split input page and return newly created page.
@@ -172,7 +219,56 @@ BPlusTreeLeafPage *BPlusTree::Split(LeafPage *node, Txn *transaction) {
  * adjusted to take info of new_node into account. Remember to deal with split
  * recursively if necessary.
  */
-void BPlusTree::InsertIntoParent(BPlusTreePage *old_node, GenericKey *key, BPlusTreePage *new_node, Txn *transaction) {}
+void BPlusTree::InsertIntoParent(BPlusTreePage *old_node, GenericKey *key, BPlusTreePage *new_node, Txn *transaction) {
+  // 步骤 1: 获取父结点
+  page_id_t parent_page_id = old_node->GetParentPageId();
+  if (parent_page_id == INVALID_PAGE_ID) {
+    // 如果没有父结点，创建新的根结点
+    page_id_t new_root_page_id;
+    Page *new_root_page = buffer_pool_manager_->NewPage(&new_root_page_id);
+    auto *new_root = reinterpret_cast<InternalPage *>(new_root_page->GetData());
+    new_root->Init(new_root_page_id, INVALID_PAGE_ID, processor_.GetKeySize(), internal_max_size_);
+    
+    // 填充新根结点
+    new_root->PopulateNewRoot(old_node->GetPageId(), key, new_node->GetPageId());
+    
+    // 更新旧结点和新结点的父结点
+    old_node->SetParentPageId(new_root_page_id);
+    new_node->SetParentPageId(new_root_page_id);
+    
+    // 更新根结点 ID
+    root_page_id_ = new_root_page_id;
+    UpdateRootPageId(true);
+    
+    // 释放新根结点
+    buffer_pool_manager_->UnpinPage(new_root_page_id, true);
+  } else {
+    // 如果有父结点，插入到父结点中
+    Page *parent_page = buffer_pool_manager_->FetchPage(parent_page_id);
+    auto *parent = reinterpret_cast<InternalPage *>(parent_page->GetData());
+    
+    // 找到旧结点在父结点中的位置
+    int index = parent->ValueIndex(old_node->GetPageId());
+    
+    // 插入新的键值对
+    parent->InsertNodeAfter(old_node->GetPageId(), key, new_node->GetPageId());
+    
+    // 检查是否需要分裂
+    if (parent->GetSize() > parent->GetMaxSize()) {
+      // 分裂父结点
+      InternalPage *new_parent = Split(parent, transaction);
+      
+      // 获取分裂后的中间键
+      GenericKey *middle_key = new_parent->KeyAt(0);
+      
+      // 递归插入到父结点的父结点中
+      InsertIntoParent(parent, middle_key, new_parent, transaction);
+    }
+    
+    // 释放父结点
+    buffer_pool_manager_->UnpinPage(parent_page_id, true);
+  }
+}
 
 /*****************************************************************************
  * REMOVE
