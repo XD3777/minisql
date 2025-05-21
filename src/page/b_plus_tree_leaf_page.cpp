@@ -233,9 +233,9 @@ void LeafPage::MoveAllTo(LeafPage *recipient) {
  */
 void LeafPage::MoveFirstToEndOf(LeafPage *recipient) {//怎么找KeyManager实例啊-》不找就是了，根本不用比，本来就要的是第一个
 
-recipient->CopyLastFrom(KeyAt(0),ValueAt(0))
-
-for (int i = 0; i < GetSize() - 1; i++) {
+recipient->CopyLastFrom(KeyAt(0),ValueAt(0));
+int i;
+for ( i = 0; i < GetSize() - 1; i++) {
     SetKeyAt(i, KeyAt(i+1));
     SetValueAt(i, ValueAt(i+1));
   }

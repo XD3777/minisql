@@ -297,7 +297,7 @@ void InternalPage::CopyLastFrom(GenericKey *key, const page_id_t value, BufferPo
 void InternalPage::MoveLastToFrontOf(InternalPage *recipient, GenericKey *middle_key,
                                      BufferPoolManager *buffer_pool_manager) {
             recipient->CopyFirstFrom(ValueAt(GetSize()-1), buffer_pool_manager);
-            recipient->SetKeyAt(1,middle_key)
+            recipient->SetKeyAt(1,middle_key);
   
         // 2. 删除当前节点的最后一个键值对
             Remove(GetSize()-1);
