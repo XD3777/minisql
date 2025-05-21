@@ -233,7 +233,7 @@ page_id_t InternalPage::RemoveAndReturnOnlyChild() {
  * You also need to use BufferPoolManager to persist changes to the parent page id for those
  * pages that are moved to the recipient
  */
-void InternalPage::MoveAllTo(InternalPage *recipient, GenericKey *middle_key, BufferPoolManager *buffer_pool_manager) {
+void InternalPage::MoveAllTo(InternalPage *recipient, GenericKey *middle_key, BufferPoolManager *buffer_pool_manager) {//这里也默认了recipient在左边
   // 1. 将中间键插入到接收者节点
   recipient->CopyLastFrom(middle_key, ValueAt(0), buffer_pool_manager);//因为用来merge的另一个节点指向的value没有对应的key，所以得用middle_key
   

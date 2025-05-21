@@ -217,7 +217,7 @@ void LeafPage::MoveAllTo(LeafPage *recipient) {
   
   // 复制数据到接收页,设置相邻页
   recipient->CopyNFrom(PairPtrAt(start_index), move_num);
-  recipient->SetNextPageId(GetNextPageId());
+  recipient->SetNextPageId(GetNextPageId());//这里默认了被删除的node在recipient的右边
   
   // 调整当前页大小
   SetSize(0);
