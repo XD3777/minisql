@@ -28,6 +28,7 @@ void LeafPage::Init(page_id_t page_id, page_id_t parent_id, int key_size, int ma
   SetParentPageId(parent_id);
   SetKeySize(key_size);
   SetMaxSize(max_size);
+  SetNextPageId(INVALID_PAGE_ID);
 }
 
 /**
@@ -141,10 +142,16 @@ void LeafPage::MoveHalfTo(LeafPage *recipient) {
   int move_num = GetSize() - start_index;
   
   // 复制数据到接收页
-  recipient->CopyNFrom(PairPtrAt(start_index), move_num);//保留了Size/2个 ，给了其他的
+  recipient->CopyNFrom(PairPtrAt(start_index), move_num);
   
   // 调整当前页大小
-  SetSize(GetSize()-move_num);
+  SetSize(GetSize() - move_num);
+  
+  // 设置后继指针
+  // 接收页的下一页应该是当前页的下一页
+  recipient->SetNextPageId(GetNextPageId());
+  // 当前页的下一页应该是接收页
+  SetNextPageId(recipient->GetPageId());
 }
 
 /*
@@ -211,17 +218,17 @@ int LeafPage::RemoveAndDeleteRecord(const GenericKey *key, const KeyManager &KM)
  * to update the next_page id in the sibling page
  */
 void LeafPage::MoveAllTo(LeafPage *recipient) {
-
-  int start_index = 0;
+int start_index = 0;
   int move_num = GetSize() - start_index;
   
-  // 复制数据到接收页,设置相邻页
+  // 复制数据到接收页
   recipient->CopyNFrom(PairPtrAt(start_index), move_num);
-  recipient->SetNextPageId(GetNextPageId());//这里默认了被删除的node在recipient的右边
+  
+  // 设置接收页的next_page_id为当前页的next_page_id
+  recipient->SetNextPageId(GetNextPageId());
   
   // 调整当前页大小
   SetSize(0);
-
 }
 
 /*****************************************************************************
@@ -231,16 +238,15 @@ void LeafPage::MoveAllTo(LeafPage *recipient) {
  * Remove the first key & value pair from this page to "recipient" page.
  *
  */
-void LeafPage::MoveFirstToEndOf(LeafPage *recipient) {//怎么找KeyManager实例啊-》不找就是了，根本不用比，本来就要的是第一个
-
-recipient->CopyLastFrom(KeyAt(0),ValueAt(0));
-int i;
-for ( i = 0; i < GetSize() - 1; i++) {
+void LeafPage::MoveFirstToEndOf(LeafPage *recipient) {
+  recipient->CopyLastFrom(KeyAt(0), ValueAt(0));
+  // 移动后面的元素填补空缺
+  for (int i = 0; i < GetSize() - 1; i++) {
     SetKeyAt(i, KeyAt(i+1));
     SetValueAt(i, ValueAt(i+1));
   }
   
-  SetSize(GetSize()-1);
+  SetSize(GetSize() - 1);
 }
 
 /*
