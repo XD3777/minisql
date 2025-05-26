@@ -154,9 +154,9 @@ bool DiskManager::IsPageFree(page_id_t logical_page_id) {
     meta_page = reinterpret_cast<DiskFileMetaPage *>(meta_data_);
 
     // 检查extent_id是否有效
-    if (extent_id >= meta_page->GetExtentNums()) {
-        return false;
-    }
+    //if (extent_id >= meta_page->GetExtentNums()) {
+    //    return false;
+    //}
 
     // 读取位图页
     char bitmap_page_data[PAGE_SIZE];
