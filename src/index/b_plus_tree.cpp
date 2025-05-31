@@ -54,8 +54,7 @@ void BPlusTree::Destroy(page_id_t current_page_id) {
  * Helper function to decide whether current b+tree is empty
  */
 bool BPlusTree::IsEmpty() const {
-  if(root_page_id_ == INVALID_PAGE_ID) return true;
-  return false;
+  return root_page_id_ == INVALID_PAGE_ID;
 }
 
 /*****************************************************************************
@@ -348,7 +347,11 @@ void BPlusTree::Redistribute(LeafPage *neighbor_node, LeafPage *node, int index)
     neighbor_node->MoveLastToFrontOf(node);
     parent->SetKeyAt(index, node->KeyAt(0));
   }
+    buffer_pool_manager_->UnpinPage(parent->GetPageId(), true);
+    buffer_pool_manager_->UnpinPage(parent->GetPageId(), true);
+
   buffer_pool_manager_->UnpinPage(parent->GetPageId(), true);
+
 }
 void BPlusTree::Redistribute(InternalPage *neighbor_node, InternalPage *node, int index) {
   auto * parent = reinterpret_cast<BPlusTree::InternalPage *>
@@ -360,7 +363,11 @@ void BPlusTree::Redistribute(InternalPage *neighbor_node, InternalPage *node, in
     neighbor_node->MoveLastToFrontOf(node,parent->KeyAt(index), buffer_pool_manager_);
     parent->SetKeyAt(index, node->KeyAt(0));
   }
+    buffer_pool_manager_->UnpinPage(parent->GetPageId(), true);
+    buffer_pool_manager_->UnpinPage(parent->GetPageId(), true);
+
   buffer_pool_manager_->UnpinPage(parent->GetPageId(), true);
+
 }
 /*
  * Update root page if necessary
