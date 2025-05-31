@@ -141,7 +141,7 @@ bool BufferPoolManager::DeletePage(page_id_t page_id) {
 
   // 3. Otherwise, P can be deleted. Remove P from the page table, reset its metadata and return it to the free list.
   page_table_.erase(page_id);
-  replacer_->Pin(frame_id); // Remove from replacer
+  replacer_->Unpin(frame_id); // Remove from replacer
 
   page->ResetMemory();
   page->page_id_ = INVALID_PAGE_ID;
