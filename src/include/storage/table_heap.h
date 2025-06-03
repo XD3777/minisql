@@ -107,36 +107,30 @@ class TableHeap {
   /**
    * create table heap and initialize first page
    */
-  explicit TableHeap(BufferPoolManager *buffer_pool_manager, Schema *schema, Txn *txn, LogManager *log_manager,
-                   LockManager *lock_manager)
-    : buffer_pool_manager_(buffer_pool_manager),
-      schema_(schema),
-      log_manager_(log_manager),
-      lock_manager_(lock_manager),
-      first_page_id_(INVALID_PAGE_ID) { // 初始化首页ID为无效值
-
-  // 创建首个数据页
-  page_id_t first_page_id;
-  TablePage *first_page = reinterpret_cast<TablePage *>(buffer_pool_manager_->NewPage(first_page_id));
-  if (first_page == nullptr) {
-    throw std::runtime_error("Failed to create first page for TableHeap");
+  explicit TableHeap(BufferPoolManager *buffer_pool_manager, Schema *schema, Txn *txn,
+                     LogManager *log_manager, LockManager *lock_manager) :
+          buffer_pool_manager_(buffer_pool_manager),
+          schema_(schema),
+          log_manager_(log_manager),
+          lock_manager_(lock_manager) {
+      first_page_id_ = INVALID_PAGE_ID;
+    last_page_id = INVALID_PAGE_ID;
+    auto first_page = reinterpret_cast<TablePage *>(buffer_pool_manager->NewPage(first_page_id_));
+    if (first_page != nullptr) {
+    first_page->Init(first_page_id_, INVALID_PAGE_ID, log_manager, txn);
+    buffer_pool_manager->UnpinPage(first_page_id_, true);
+    last_page_id = first_page_id_;  
   }
-
-  // 初始化页面：设置页ID、前后页ID（均为无效值，因单页无前后页）
-  first_page->Init(first_page_id, INVALID_PAGE_ID, log_manager, txn);
-  
-  // 记录首页ID
-  first_page_id_ = first_page_id;
-
-  // 解锁并标记页面为脏页（因初始化了页面内容）
-  first_page->WUnlatch();
-  buffer_pool_manager_->UnpinPage(first_page_id, true);
-}
+    first_page->Init(first_page_id_, PAGE_SIZE, log_manager, txn);
+    buffer_pool_manager->UnpinPage(first_page_id_, true);
+    schema_ = schema;
+  };
 
   explicit TableHeap(BufferPoolManager *buffer_pool_manager, page_id_t first_page_id, Schema *schema,
                      LogManager *log_manager, LockManager *lock_manager)
       : buffer_pool_manager_(buffer_pool_manager),
         first_page_id_(first_page_id),
+        last_page_id(first_page_id),
         schema_(schema),
         log_manager_(log_manager),
         lock_manager_(lock_manager) {}
@@ -144,6 +138,8 @@ class TableHeap {
  private:
   BufferPoolManager *buffer_pool_manager_;
   page_id_t first_page_id_;
+  page_id_t last_page_id;
+  uint32_t total_page{0};
   Schema *schema_;
   [[maybe_unused]] LogManager *log_manager_;
   [[maybe_unused]] LockManager *lock_manager_;

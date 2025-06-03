@@ -20,12 +20,12 @@
 ExecuteEngine::ExecuteEngine() {
   char path[] = "./databases";
   DIR *dir;
-  if ((dir = opendir(path)) == nullptr) {
+  if((dir = opendir(path)) == nullptr) {
     mkdir("./databases", 0777);
     dir = opendir(path);
   }
   /** After you finish the code for the CatalogManager section,
-   *  you can uncomment the commented code.   **/
+   *  you can uncomment the commented code.   
   struct dirent *stdir;
   while((stdir = readdir(dir)) != nullptr) {
     if( strcmp( stdir->d_name , "." ) == 0 ||
@@ -34,7 +34,7 @@ ExecuteEngine::ExecuteEngine() {
       continue;
     dbs_[stdir->d_name] = new DBStorageEngine(stdir->d_name, false);
   }
-
+  */
   closedir(dir);
 }
 
@@ -88,8 +88,8 @@ dberr_t ExecuteEngine::ExecutePlan(const AbstractPlanNodeRef &plan, std::vector<
         result_set->push_back(row);
       }
     }
-  } catch (const exception &ex) {
-    std::cout << "Error Encountered in Executor Execution: " << ex.what() << std::endl;
+  } catch (const string &ex) {
+    std::cout << "Error Encountered in Executor Execution: " << ex << std::endl;
     if (result_set != nullptr) {
       result_set->clear();
     }
@@ -104,7 +104,8 @@ dberr_t ExecuteEngine::Execute(pSyntaxNode ast) {
   }
   auto start_time = std::chrono::system_clock::now();
   unique_ptr<ExecuteContext> context(nullptr);
-  if (!current_db_.empty()) context = dbs_[current_db_]->MakeExecuteContext(nullptr);
+  if(!current_db_.empty())
+    context = dbs_[current_db_]->MakeExecuteContext(nullptr);
   switch (ast->type_) {
     case kNodeCreateDB:
       return ExecuteCreateDatabase(ast, context.get());
@@ -234,102 +235,105 @@ void ExecuteEngine::ExecuteInformation(dberr_t result) {
       break;
   }
 }
-
+/**
+ * TODO: Student Implement
+ */
 dberr_t ExecuteEngine::ExecuteCreateDatabase(pSyntaxNode ast, ExecuteContext *context) {
 #ifdef ENABLE_EXECUTE_DEBUG
   LOG(INFO) << "ExecuteCreateDatabase" << std::endl;
 #endif
   string db_name = ast->child_->val_;
-  if (dbs_.find(db_name) != dbs_.end()) {
+  string db_file_name = "databases/" + db_name + ".db";
+  std::ifstream check_db_file(db_file_name, std::ios::in);
+  if (check_db_file.is_open()) {
+    std::cout << "Database " << db_name << " is already created." << std::endl;
     return DB_ALREADY_EXIST;
   }
-  dbs_.insert(make_pair(db_name, new DBStorageEngine(db_name, true)));
+  std::ofstream db_file(db_file_name, std::ios::out);
+  if (!db_file.is_open()) {
+    std::cout << "Failed to create database " << db_name << "." << std::endl;
+    return DB_FAILED;
+  }
+  dbs_[db_name + ".db"] = new DBStorageEngine(db_name+".db");
+  std::cout << "Database " << db_name << " is created." << std::endl;
   return DB_SUCCESS;
 }
 
+/**
+ * TODO: Student Implement
+ */
 dberr_t ExecuteEngine::ExecuteDropDatabase(pSyntaxNode ast, ExecuteContext *context) {
 #ifdef ENABLE_EXECUTE_DEBUG
   LOG(INFO) << "ExecuteDropDatabase" << std::endl;
 #endif
   string db_name = ast->child_->val_;
-  if (dbs_.find(db_name) == dbs_.end()) {
+  string db_file_name = "databases/" + db_name + ".db";
+  std::ifstream db_file(db_file_name, std::ios::in);
+  if (!db_file.is_open()) {
+    std::cout << "Database " << db_name << " does not exist." << std::endl;
     return DB_NOT_EXIST;
   }
-  remove(("./databases/" + db_name).c_str());
-  delete dbs_[db_name];
-  dbs_.erase(db_name);
-  if (db_name == current_db_)
-    current_db_ = "";
+  db_file.close();
+  remove(db_file_name.c_str());
+  std::ifstream check_db_file(db_file_name, std::ios::in);
+  if (db_file.is_open()) {
+    std::cout << "Failed to delete database " << db_name << "." << std::endl;
+    return DB_FAILED;
+  }
+  dbs_.erase(db_name + ".db");
+  std::cout << "Database " << db_name << " is deleted." << std::endl;
   return DB_SUCCESS;
 }
 
+/**
+ * TODO: Student Implement
+ */
 dberr_t ExecuteEngine::ExecuteShowDatabases(pSyntaxNode ast, ExecuteContext *context) {
 #ifdef ENABLE_EXECUTE_DEBUG
   LOG(INFO) << "ExecuteShowDatabases" << std::endl;
 #endif
-  if (dbs_.empty()) {
-    cout << "Empty set (0.00 sec)" << endl;
-    return DB_SUCCESS;
+  cout << endl;
+  int count = 0;
+  for (auto i: dbs_) {
+    cout << i.first.substr(0, i.first.size()-3) << std::endl;
+    count ++;
   }
-  int max_width = 8;
-  for (const auto &itr : dbs_) {
-    if (itr.first.length() > max_width) max_width = itr.first.length();
-  }
-  cout << "+" << setfill('-') << setw(max_width + 2) << ""
-       << "+" << endl;
-  cout << "| " << std::left << setfill(' ') << setw(max_width) << "Database"
-       << " |" << endl;
-  cout << "+" << setfill('-') << setw(max_width + 2) << ""
-       << "+" << endl;
-  for (const auto &itr : dbs_) {
-    cout << "| " << std::left << setfill(' ') << setw(max_width) << itr.first << " |" << endl;
-  }
-  cout << "+" << setfill('-') << setw(max_width + 2) << ""
-       << "+" << endl;
+  cout << count << " databases listed." << std::endl;
   return DB_SUCCESS;
 }
 
+/**
+ * TODO: Student Implement
+ */
 dberr_t ExecuteEngine::ExecuteUseDatabase(pSyntaxNode ast, ExecuteContext *context) {
 #ifdef ENABLE_EXECUTE_DEBUG
   LOG(INFO) << "ExecuteUseDatabase" << std::endl;
 #endif
   string db_name = ast->child_->val_;
-  if (dbs_.find(db_name) != dbs_.end()) {
-    current_db_ = db_name;
-    cout << "Database changed" << endl;
-    return DB_SUCCESS;
+  string db_file_name = db_name + ".db";
+  if (dbs_.find(db_file_name) == dbs_.end()) {
+    return DB_NOT_EXIST;
   }
-  return DB_NOT_EXIST;
+  current_db_ = db_file_name;
+  std::cout << "Database " << db_name << " is used." << std::endl;
+  return DB_SUCCESS;
 }
 
+/**
+ * TODO: Student Implement
+ */
 dberr_t ExecuteEngine::ExecuteShowTables(pSyntaxNode ast, ExecuteContext *context) {
 #ifdef ENABLE_EXECUTE_DEBUG
   LOG(INFO) << "ExecuteShowTables" << std::endl;
 #endif
-  if (current_db_.empty()) {
-    cout << "No database selected" << endl;
-    return DB_FAILED;
+  cout << endl;
+  string db_name = current_db_;
+  vector <TableInfo*> tables;
+  dbs_[db_name]->catalog_mgr_->GetTables(tables);
+  for (auto i: tables) {
+    cout << i->GetTableName() << endl;
   }
-  vector<TableInfo *> tables;
-  if (dbs_[current_db_]->catalog_mgr_->GetTables(tables) == DB_FAILED) {
-    cout << "Empty set (0.00 sec)" << endl;
-    return DB_FAILED;
-  }
-  string table_in_db("Tables_in_" + current_db_);
-  uint max_width = table_in_db.length();
-  for (const auto &itr : tables) {
-    if (itr->GetTableName().length() > max_width) max_width = itr->GetTableName().length();
-  }
-  cout << "+" << setfill('-') << setw(max_width + 2) << ""
-       << "+" << endl;
-  cout << "| " << std::left << setfill(' ') << setw(max_width) << table_in_db << " |" << endl;
-  cout << "+" << setfill('-') << setw(max_width + 2) << ""
-       << "+" << endl;
-  for (const auto &itr : tables) {
-    cout << "| " << std::left << setfill(' ') << setw(max_width) << itr->GetTableName() << " |" << endl;
-  }
-  cout << "+" << setfill('-') << setw(max_width + 2) << ""
-       << "+" << endl;
+  cout << tables.size() << " tables listed." << endl;
   return DB_SUCCESS;
 }
 
@@ -525,6 +529,7 @@ dberr_t ExecuteEngine::ExecuteDropIndex(pSyntaxNode ast, ExecuteContext *context
   }
   return DB_INDEX_NOT_FOUND;
 }
+
 
 dberr_t ExecuteEngine::ExecuteTrxBegin(pSyntaxNode ast, ExecuteContext *context) {
 #ifdef ENABLE_EXECUTE_DEBUG

@@ -3,75 +3,69 @@
 /**
  * TODO: Student Implement
  */
-bool TableHeap::InsertTuple(Row &row, Txn *txn) { 
-  // 计算行序列化后的大小
+bool TableHeap::InsertTuple(Row &row, Txn *txn) {
   uint32_t tuple_size = row.GetSerializedSize(schema_);
   if (tuple_size > TablePage::SIZE_MAX_ROW) {
-    return false; // 行太大，无法存储
+    return false;
   }
 
-  page_id_t current_page_id = first_page_id_;
-  while (current_page_id != INVALID_PAGE_ID) {
-    // 1. 从缓冲池获取数据页
-    TablePage *page = reinterpret_cast<TablePage *>(buffer_pool_manager_->FetchPage(current_page_id));
+  page_id_t insert_page_id = (last_page_id != INVALID_PAGE_ID) ? last_page_id : first_page_id_;
+  TablePage *page = reinterpret_cast<TablePage *>(buffer_pool_manager_->FetchPage(insert_page_id));
+
+  // 如果 page 是空的，新建一个
+  if (page == nullptr || buffer_pool_manager_->IsPageFree(insert_page_id)) {
+    insert_page_id = INVALID_PAGE_ID;
+  }
+
+  // 从最后页开始试图插入
+  while (insert_page_id != INVALID_PAGE_ID) {
+    page = reinterpret_cast<TablePage *>(buffer_pool_manager_->FetchPage(insert_page_id));
     if (page == nullptr) {
-      return false; // 页面获取失败
+      return false;
     }
 
-    page->WLatch(); // 加写锁
-
-    // 2. 尝试插入行到当前页
-    bool inserted = page->InsertTuple(row, schema_, txn, lock_manager_, log_manager_);
-    if (inserted) {
-      // 插入成功，记录 RowId
-      RowId rid(page->GetTablePageId(), page->GetTupleCount() - 1); // 假设插入到最后一个槽位
-      row.SetRowId(rid);
-
-      page->WUnlatch();
-      buffer_pool_manager_->UnpinPage(current_page_id, true); // 标记为脏页
+    if (page->InsertTuple(row, schema_, txn, lock_manager_, log_manager_)) {
+      buffer_pool_manager_->UnpinPage(insert_page_id, true);
+      last_page_id = insert_page_id;
       return true;
     }
 
-    page->WUnlatch();
-    buffer_pool_manager_->UnpinPage(current_page_id, false); // 未修改，无需脏页标记
+    page_id_t next_page_id = page->GetNextPageId();
+    buffer_pool_manager_->UnpinPage(insert_page_id, false);
 
-    // 3. 查找下一个页（First Fit 策略）
-    current_page_id = page->GetNextPageId();
+    insert_page_id = next_page_id;
   }
 
-  // 4. 无可用页，创建新页
-  TablePage *new_page = reinterpret_cast<TablePage *>(buffer_pool_manager_->NewPage(current_page_id));
+  // 如果没有空页可插入，创建新页
+  page_id_t new_page_id;
+  TablePage *new_page = reinterpret_cast<TablePage *>(buffer_pool_manager_->NewPage(new_page_id));
   if (new_page == nullptr) {
-    return false; // 新页创建失败
+    return false;
   }
 
-  new_page->Init(current_page_id, INVALID_PAGE_ID, log_manager_, txn); // 初始化新页
+  new_page->Init(new_page_id, last_page_id, log_manager_, txn);
 
-  // 链接到双向链表
+  if (last_page_id != INVALID_PAGE_ID) {
+    TablePage *last_page = reinterpret_cast<TablePage *>(buffer_pool_manager_->FetchPage(last_page_id));
+    if (last_page != nullptr) {
+      last_page->SetNextPageId(new_page_id);
+      buffer_pool_manager_->UnpinPage(last_page_id, true);
+    }
+  }
+
   if (first_page_id_ == INVALID_PAGE_ID) {
-    first_page_id_ = current_page_id; // 首页为空时设置首页
-  } else {
-    // 找到尾页并链接新页
-    TablePage *last_page = reinterpret_cast<TablePage *>(buffer_pool_manager_->FetchPage(current_page_id));
-    last_page->SetNextPageId(current_page_id);
-    new_page->SetPrevPageId(last_page->GetTablePageId());
-    buffer_pool_manager_->UnpinPage(last_page->GetTablePageId(), true);
+    first_page_id_ = new_page_id;
   }
 
-  // 插入行到新页
+  last_page_id = new_page_id;
+  total_page++;
+
+  // 插入新页
   bool inserted = new_page->InsertTuple(row, schema_, txn, lock_manager_, log_manager_);
-  new_page->WUnlatch();
-  buffer_pool_manager_->UnpinPage(current_page_id, inserted); // 插入成功则标记脏页
+  buffer_pool_manager_->UnpinPage(new_page_id, inserted);
+  return inserted;
+}
 
-  if (inserted) {
-    RowId rid(current_page_id, 0); // 新页首个槽位
-    row.SetRowId(rid);
-    return true;
-  }
-
-  buffer_pool_manager_->DeletePage(current_page_id); // 插入失败，删除空页
-  return false;
- }
 
 bool TableHeap::MarkDelete(const RowId &rid, Txn *txn) {
   // Find the page which contains the tuple.

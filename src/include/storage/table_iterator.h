@@ -33,12 +33,8 @@ public:
 
 private:
   // add your own private member variables here
-  TableHeap *table_heap_;        // 指向所属的堆表
-  Txn *txn_;                    // 当前事务
-  RowId current_rid_;           // 当前行的 RowId
-  TablePage *current_page_;     // 当前数据页指针
-  uint32_t current_slot_;       // 当前槽位编号
-  bool is_end_;                 // 是否为结束迭代器
+ TableHeap* table_heap_;
+ Row* row;
 };
 
 #endif  // MINISQL_TABLE_ITERATOR_H
