@@ -216,7 +216,7 @@ void ExecuteEngine::ExecuteInformation(dberr_t result) {
     case DB_TABLE_NOT_EXIST:
       cout << "Table not exists." << endl;
       break;
-    case DB_INDEX_ALREADY_EXIST:
+    case :
       cout << "Index already exists." << endl;
       break;
     case DB_INDEX_NOT_FOUND:
@@ -349,94 +349,163 @@ dberr_t ExecuteEngine::ExecuteCreateTable(pSyntaxNode ast, ExecuteContext *conte
     return DB_FAILED;
   }
   string table_name = ast->child_->val_;
+  // 检查表是否已存在
+  TableInfo* tmp_table = nullptr;
+  if (context->GetCatalog()->GetTable(table_name, tmp_table) == DB_SUCCESS) {
+    std::cout << "Table " << table_name << " already exists." << std::endl;
+    return DB_FAILED;
+  }
+
   pSyntaxNode columnDefinitions = ast->child_->next_;
-  vector <Column*> columns;
-  int index = 0;
+  vector<Column*> columns;
+  set<string> col_names_seen;
   vector<string> pk_col_names;
   vector<string> unique_col_names;
-  // the following loop is for parsing the syntax tree, and it is too long to display.
+  bool has_primary_key = false;
+  int index = 0;
+
   for (pSyntaxNode columnDef = columnDefinitions->child_; columnDef; columnDef = columnDef->next_, ++index) {
     Column *new_col = nullptr;
     string col_name;
-    TypeId col_type;
-    int col_len;
+    TypeId col_type = kTypeInvalid;
+    int col_len = 0;
+
     if (!columnDef->val_) {
+      // 普通列
       col_name = columnDef->child_->val_;
-      if (!strcmp(columnDef->child_->next_->val_, "int")) {
-        col_type = kTypeInt;
+      if (col_names_seen.count(col_name)) {
+        std::cout << "Duplicate column name: " << col_name << std::endl;
+        return DB_FAILED;
       }
-      else if (!strcmp(columnDef->child_->next_->val_, "float")) {
-        col_type = kTypeFloat;
-      }
-      else if (!strcmp(columnDef->child_->next_->val_, "char")) {
+      col_names_seen.insert(col_name);
+
+      const char* type_str = columnDef->child_->next_->val_;
+      if (!strcmp(type_str, "int")) col_type = kTypeInt;
+      else if (!strcmp(type_str, "float")) col_type = kTypeFloat;
+      else if (!strcmp(type_str, "char")) {
         col_type = kTypeChar;
         col_len = stoi(columnDef->child_->next_->child_->val_);
+        if (col_len <= 0 || col_len > 255) {
+          std::cout << "Invalid CHAR length for column " << col_name << std::endl;
+          return DB_FAILED;
+        }
       }
-      else col_type = kTypeInvalid;
-      if (col_type == kTypeChar) {
-        new_col = new Column(col_name, col_type, col_len, index, true,false);
+
+      if (col_type == kTypeInvalid) {
+        std::cout << "Invalid type for column " << col_name << std::endl;
+        return DB_FAILED;
       }
-      else new_col = new Column(col_name, col_type, index, true, false);
+
+      new_col = (col_type == kTypeChar)
+                  ? new Column(col_name, col_type, col_len, index, true, false)
+                  : new Column(col_name, col_type, index, true, false);
       columns.emplace_back(new_col);
     }
     else if (!strcmp(columnDef->val_, "unique")) {
+      // unique 列
       col_name = columnDef->child_->val_;
-      if (!strcmp(columnDef->child_->next_->val_, "int")) {
-        col_type = kTypeInt;
+      if (col_names_seen.count(col_name)) {
+        std::cout << "Duplicate column name: " << col_name << std::endl;
+        return DB_FAILED;
       }
-      else if (!strcmp(columnDef->child_->next_->val_, "float")) {
-        col_type = kTypeFloat;
-      }
-      else if (!strcmp(columnDef->child_->next_->val_, "char")) {
+      col_names_seen.insert(col_name);
+
+      const char* type_str = columnDef->child_->next_->val_;
+      if (!strcmp(type_str, "int")) col_type = kTypeInt;
+      else if (!strcmp(type_str, "float")) col_type = kTypeFloat;
+      else if (!strcmp(type_str, "char")) {
         col_type = kTypeChar;
         col_len = stoi(columnDef->child_->next_->child_->val_);
+        if (col_len <= 0 || col_len > 255) {
+          std::cout << "Invalid CHAR length for unique column " << col_name << std::endl;
+          return DB_FAILED;
+        }
       }
-      else col_type = kTypeInvalid;
-      if (col_type == kTypeChar) {
-        new_col = new Column(col_name, col_type, col_len, index, false, true);
+
+      if (col_type == kTypeInvalid) {
+        std::cout << "Invalid type for unique column " << col_name << std::endl;
+        return DB_FAILED;
       }
-      else new_col = new Column(col_name, col_type, index, false, true);
+
+      new_col = (col_type == kTypeChar)
+                  ? new Column(col_name, col_type, col_len, index, false, true)
+                  : new Column(col_name, col_type, index, false, true);
       columns.emplace_back(new_col);
       unique_col_names.emplace_back(col_name);
     }
     else if (!strcmp(columnDef->val_, "primary keys")) {
-      for (pSyntaxNode pk_col_name = columnDef->child_; pk_col_name; pk_col_name = pk_col_name->next_) {
-        pk_col_names.emplace_back(pk_col_name->val_);
+      if (has_primary_key) {
+        std::cout << "Duplicate PRIMARY KEY definition." << std::endl;
+        return DB_FAILED;
       }
-      for (auto pk_col_name: pk_col_names) {
-        for (auto column: columns) {
-          if (!column->GetName().compare(pk_col_name)) {
-            if (pk_col_names.size() == 1){
-              column->SetUnique(true);
-            }
-            column->SetNullable(false);
-            break;
-          }
-        }
+      has_primary_key = true;
+
+      for (pSyntaxNode pk_col = columnDef->child_; pk_col; pk_col = pk_col->next_) {
+        pk_col_names.emplace_back(pk_col->val_);
       }
     }
   }
+
+  // 检查主键列/唯一列是否都定义过
+  for (const auto &pk_col : pk_col_names) {
+    if (col_names_seen.count(pk_col) == 0) {
+      std::cout << "Primary key column not defined: " << pk_col << std::endl;
+      return DB_FAILED;
+    }
+  }
+
+  for (const auto &uniq_col : unique_col_names) {
+    if (col_names_seen.count(uniq_col) == 0) {
+      std::cout << "Unique column not defined: " << uniq_col << std::endl;
+      return DB_FAILED;
+    }
+  }
+
+  // 设置主键属性
+  for (const auto &pk_col_name : pk_col_names) {
+    for (auto column : columns) {
+      if (column->GetName() == pk_col_name) {
+        column->SetNullable(false);
+        if (pk_col_names.size() == 1) {
+          column->SetUnique(true);
+        }
+        break;
+      }
+    }
+  }
+
+  // 创建表
   auto *schema = new Schema(columns);
   auto *table = TableInfo::Create();
   auto err = context->GetCatalog()->CreateTable(table_name, schema, nullptr, table);
   if (err != DB_SUCCESS) {
+    std::cout << "Create table failed in catalog." << std::endl;
     return err;
   }
+
+  // 创建唯一索引
   int unique_index = 0;
-  for (auto i : unique_col_names) {
+  for (const auto &col : unique_col_names) {
     auto *index = IndexInfo::Create();
-    dberr_t res = context->GetCatalog()->CreateIndex(table_name, "__Unique" + to_string(unique_index), {i}, nullptr, index, "bptree");
-    unique_index ++;
+    dberr_t res = context->GetCatalog()->CreateIndex(table_name, "__Unique" + to_string(unique_index), {col}, nullptr, index, "bptree");
     if (res != DB_SUCCESS) {
+      std::cout << "Failed to create unique index on column: " << col << std::endl;
+      return res;
+    }
+    unique_index++;
+  }
+
+  // 创建主键索引（仅限单列）
+  if (pk_col_names.size() == 1) {
+    auto *indexInfo = IndexInfo::Create();
+    dberr_t res = context->GetCatalog()->CreateIndex(table_name, "PRIMARY_KEY_", pk_col_names, nullptr, indexInfo, "bptree");
+    if (res != DB_SUCCESS) {
+      std::cout << "Failed to create primary key index." << std::endl;
       return res;
     }
   }
-  auto *indexInfo = IndexInfo::Create();
-  if (pk_col_names.size() == 1) {
-    cout << "Table " << table_name << " created successfully." << endl;
-    return context->GetCatalog()->CreateIndex(table_name, "PRIMARY_KEY_", pk_col_names, nullptr, indexInfo, "bptree");
-  }
-  cout << "Table " << table_name << " created successfully." << endl;
+
+  std::cout << "Table " << table_name << " created successfully." << std::endl;
   return DB_SUCCESS;
 }
 
