@@ -216,7 +216,7 @@ void ExecuteEngine::ExecuteInformation(dberr_t result) {
     case DB_TABLE_NOT_EXIST:
       cout << "Table not exists." << endl;
       break;
-    case :
+    case DB_INDEX_ALREADY_EXIST:
       cout << "Index already exists." << endl;
       break;
     case DB_INDEX_NOT_FOUND:
